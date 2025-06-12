@@ -1,0 +1,255 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🌌 Illusion Shot 3D</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      overflow: hidden;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    canvas {
+      display: block;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      color: #fff;
+      z-index: 10;
+    }
+    #restartBtn {
+      background: #00ffe0;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 20px;
+      font-size: 1em;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 20px;
+      z-index: 20;
+    }
+    .btn {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: #00ffe0;
+      border: none;
+      box-shadow: 0 0 10px #00ffe0;
+      font-size: 1.5em;
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h1>🌌 Illusion Shot 3D</h1>
+    <p id="status">Score: 0 | Level: 1</p>
+    <button id="restartBtn" onclick="restartGame()">🔁 Play Again</button>
+  </div>
+  <div id="controls">
+    <button class="btn" onclick="move('left')">⏪</button>
+    <button class="btn" onclick="shoot()">🔥</button>
+    <button class="btn" onclick="move('right')">⏩</button>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    let scene, camera, renderer;
+    let player, bullets = [], enemies = [], particles = [];
+    let score = 0, level = 1, enemySpeed = 0.01, enemyCount = 5;
+    let boss = null;const shootSound = new Audio("https://cdn.pixabay.com/download/audio/2022/03/15/audio_07c3e00d92.mp3?filename=laser-gun-81267.mp3");
+const hitSound = new Audio("https://cdn.pixabay.com/download/audio/2022/03/15/audio_1671c52dcd.mp3?filename=damage-hit-6081.mp3");
+const gameOverSound = new Audio("https://cdn.pixabay.com/download/audio/2022/01/14/audio_d8393194c2.mp3?filename=game-over-arcade-6435.mp3");
+
+const statusText = document.getElementById('status');
+const playerTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/brick_diffuse.jpg');
+const enemyTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/uv_grid_opengl.jpg');
+const bossTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/planets/jupiter.jpg');
+
+function init() {
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  renderer = new THREE.WebGLRenderer();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const geometry = new THREE.BoxGeometry();
+  const material = new THREE.MeshBasicMaterial({ map: playerTexture });
+  player = new THREE.Mesh(geometry, material);
+  player.position.set(0, -4, 0);
+  scene.add(player);
+
+  camera.position.z = 5;
+  spawnEnemies();
+}
+
+function spawnEnemies() {
+  if (level % 3 === 0) {
+    const geo = new THREE.SphereGeometry(0.7, 32, 32);
+    const mat = new THREE.MeshBasicMaterial({ map: bossTexture });
+    boss = new THREE.Mesh(geo, mat);
+    boss.position.set(0, 4, 0);
+    boss.userData = { hp: 5, speed: enemySpeed / 2 };
+    scene.add(boss);
+    return;
+  }
+  for (let i = 0; i < enemyCount; i++) {
+    const geo = new THREE.SphereGeometry(0.3, 16, 16);
+    const mat = new THREE.MeshBasicMaterial({ map: enemyTexture });
+    const enemy = new THREE.Mesh(geo, mat);
+    enemy.position.set(Math.random() * 8 - 4, Math.random() * 4 + 2, 0);
+    enemy.userData = { speed: enemySpeed };
+    scene.add(enemy);
+    enemies.push(enemy);
+  }
+}
+
+function createExplosion(x, y) {
+  for (let i = 0; i < 10; i++) {
+    const geo = new THREE.SphereGeometry(0.05);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+    const particle = new THREE.Mesh(geo, mat);
+    particle.position.set(x, y, 0);
+    particle.userData = { vx: (Math.random() - 0.5) * 0.2, vy: (Math.random() - 0.5) * 0.2, life: 30 };
+    scene.add(particle);
+    particles.push(particle);
+  }
+}
+
+function shoot() {
+  const geo = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 12);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+  const bullet = new THREE.Mesh(geo, mat);
+  bullet.rotation.x = Math.PI / 2;
+  bullet.position.set(player.position.x, player.position.y + 0.5, 0);
+  scene.add(bullet);
+  bullets.push(bullet);
+  shootSound.currentTime = 0;
+  shootSound.play();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  bullets.forEach((b, i) => {
+    b.position.y += 0.1;
+    if (b.position.y > 6) {
+      scene.remove(b);
+      bullets.splice(i, 1);
+    }
+  });
+
+  enemies.forEach((e, ei) => {
+    e.position.y -= e.userData.speed;
+    bullets.forEach((b, bi) => {
+      if (Math.abs(b.position.x - e.position.x) < 0.3 && Math.abs(b.position.y - e.position.y) < 0.3) {
+        createExplosion(e.position.x, e.position.y);
+        scene.remove(e);
+        scene.remove(b);
+        enemies.splice(ei, 1);
+        bullets.splice(bi, 1);
+        score++;
+        hitSound.play();
+        updateStatus();
+      }
+    });
+    if (e.position.y < -5) gameOver();
+  });
+
+  if (boss) {
+    boss.position.y -= boss.userData.speed;
+    bullets.forEach((b, bi) => {
+      if (Math.abs(b.position.x - boss.position.x) < 0.5 && Math.abs(b.position.y - boss.position.y) < 0.5) {
+        scene.remove(b);
+        bullets.splice(bi, 1);
+        boss.userData.hp--;
+        createExplosion(boss.position.x, boss.position.y);
+        hitSound.play();
+        if (boss.userData.hp <= 0) {
+          scene.remove(boss);
+          boss = null;
+          score += 10;
+          nextLevel();
+        }
+      }
+    });
+    if (boss.position.y < -5) gameOver();
+  }
+
+  particles.forEach((p, i) => {
+    p.position.x += p.userData.vx;
+    p.position.y += p.userData.vy;
+    p.userData.life--;
+    if (p.userData.life <= 0) {
+      scene.remove(p);
+      particles.splice(i, 1);
+    }
+  });
+
+  renderer.render(scene, camera);
+}
+
+function nextLevel() {
+  level++;
+  enemyCount += 2;
+  enemySpeed += 0.005;
+  updateStatus();
+  spawnEnemies();
+}
+
+function updateStatus() {
+  statusText.textContent = `Score: ${score} | Level: ${level}`;
+}
+
+function move(dir) {
+  if (dir === 'left' && player.position.x > -4) player.position.x -= 0.3;
+  if (dir === 'right' && player.position.x < 4) player.position.x += 0.3;
+}
+
+function gameOver() {
+  gameOverSound.play();
+  alert('💀 Game Over! Final Score: ' + score);
+  restartGame();
+}
+
+function restartGame() {
+  bullets.forEach(b => scene.remove(b));
+  enemies.forEach(e => scene.remove(e));
+  particles.forEach(p => scene.remove(p));
+  if (boss) scene.remove(boss);
+  bullets = [];
+  enemies = [];
+  particles = [];
+  boss = null;
+  score = 0;
+  level = 1;
+  enemyCount = 5;
+  enemySpeed = 0.01;
+  updateStatus();
+  spawnEnemies();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft') move('left');
+  if (e.key === 'ArrowRight') move('right');
+  if (e.key === ' ') shoot();
+});
+
+init();
+animate();
+
+  </script>
+</body>
+</html>
